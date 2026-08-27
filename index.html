@@ -2,6 +2,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Browser Check</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
 <style>
   * { box-sizing: border-box; }
   body {
@@ -130,6 +132,7 @@
   } catch (e) { firstSeen = 'localStorage недоступен'; }
 
   rows.push(
+    ['предложение установки', '<span id="bip">жду 3 сек…</span>'],
     ['окно / экран', window.innerWidth + '×' + window.innerHeight + ' / ' + screen.width + '×' + screen.height],
     ['макс. высота окна', maxH + (maxH > window.innerHeight ? ' (сейчас на ' + (maxH - window.innerHeight) + 'px меньше)' : ' (сейчас максимум)')],
     ['localStorage', firstSeen],
@@ -189,6 +192,27 @@
         '«Открыть в ' + target + '» / «Open in browser».</p>'
       : '') +
     copyBtn + debug;
+})();
+
+// ---- проверка beforeinstallprompt ----
+// Приложение Chrome предлагает установить сайт на домашний экран, Custom Tabs — нет.
+// Событие приходит асинхронно, поэтому строку в таблице обновляем отдельно.
+(function () {
+  var fired = false;
+  function set(text, bad) {
+    var el = document.getElementById('bip');
+    if (el) el.innerHTML = bad ? '<span class="yes">' + text + '</span>' : text;
+  }
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    fired = true;
+    set('пришло (приложение Chrome)');
+  });
+  setTimeout(function () { if (!fired) set('не пришло (Custom Tabs / уже установлено)', true); }, 3000);
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
 })();
 </script>
 </body>
