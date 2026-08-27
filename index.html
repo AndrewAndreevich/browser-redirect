@@ -119,8 +119,20 @@
     ['webkit.messageHandlers', wkHandlers
       ? Object.keys(window.webkit.messageHandlers).slice(0, 8).join(', ') || 'есть' : false]
   );
+  // максимальная высота окна, виденная на этом устройстве: у Custom Tabs панель выше,
+  // чем у приложения Chrome, а хранилище у них общее — разница станет видна сразу
+  var maxH = 0, firstSeen = '';
+  try {
+    maxH = +localStorage.getItem('maxInnerH') || 0;
+    firstSeen = localStorage.getItem('firstSeen') || '';
+    if (!firstSeen) { firstSeen = 'этот запуск'; localStorage.setItem('firstSeen', 'был раньше'); }
+    if (window.innerHeight > maxH) { maxH = window.innerHeight; localStorage.setItem('maxInnerH', String(maxH)); }
+  } catch (e) { firstSeen = 'localStorage недоступен'; }
+
   rows.push(
     ['окно / экран', window.innerWidth + '×' + window.innerHeight + ' / ' + screen.width + '×' + screen.height],
+    ['макс. высота окна', maxH + (maxH > window.innerHeight ? ' (сейчас на ' + (maxH - window.innerHeight) + 'px меньше)' : ' (сейчас максимум)')],
+    ['localStorage', firstSeen],
     ['UA', ua]
   );
 
