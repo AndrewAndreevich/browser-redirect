@@ -38,53 +38,76 @@
   var isIOS = /iPhone|iPad|iPod/.test(ua) ||
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var isAndroid = /Android/.test(ua);
+  var isDesktop = !isIOS && !isAndroid;
 
-  // --- 1. Сторонние браузеры (у них честный токен в UA) ---
+  // --- 1. Сторонние браузеры (честно метят себя в UA) ---
   var iosOtherBrowser     = /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|YaBrowser|DuckDuckGo|Brave/.test(ua);
   var androidOtherBrowser = /Firefox|EdgA|OPR|SamsungBrowser|YaBrowser|Brave|UCBrowser|MiuiBrowser/.test(ua);
 
-  // --- 2. In-app браузеры, которые представляются в UA ---
+  // --- 2. In-app браузеры с меткой в UA ---
   var inAppUA = /(FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Twitter|TikTok|Snapchat|VKAndroidApp|VKClient|OKApp|WhatsApp|Discord|Slack|LinkedInApp|Pinterest|GSA\/)/i.test(ua);
 
-  // --- 3. Android WebView: токен "; wv" ---
-  var androidWebView = isAndroid && /;\s*wv[;)]/.test(ua);
-
-  // --- 4. Telegram: инжектит свои объекты ---
+  // --- 3. Telegram и прочие: инжектят свои объекты ---
   var telegramObj = !!(window.TelegramWebviewProxy || window.TelegramWebview ||
                        (window.Telegram && (window.Telegram.WebApp || window.Telegram.WebView)));
 
+  // --- 4. Android WebView ---
+  // а) классический токен "; wv" (Telegram его убирает, но другие приложения оставляют)
+  var wvToken = isAndroid && /;\s*wv[;)]/.test(ua);
+  // б) Client Hints: WebView пишет бренд "Android WebView", настоящий Chrome — "Google Chrome".
+  //    UA-строку приложение подменяет легко, бренды — нет.
+  var uaData = navigator.userAgentData;
+  var brands = (uaData && uaData.brands || []).map(function (b) { return b.brand; });
+  var brandList = brands.join(', ');
+  var brandWebView  = /WebView/i.test(brandList);
+  var brandRealChrome = /Google Chrome/i.test(brandList);
+  // в) в WebView нет Notification API — запасной признак, если Client Hints недоступны
+  var noNotification = typeof window.Notification === 'undefined';
+
+  var androidInApp = isAndroid && !androidOtherBrowser && (
+        wvToken || brandWebView || telegramObj || inAppUA ||
+        (brands.length ? !brandRealChrome : noNotification)
+      );
+
   // --- 5. iOS WKWebView: UA как у Safari, но API другие ---
-  // navigator.standalone есть только в настоящем Safari, в WKWebView он undefined
+  // navigator.standalone есть только в приложении Safari, в WKWebView он undefined
   var noStandalone = isIOS && typeof navigator.standalone === 'undefined';
-  // window.webkit.messageHandlers — мост "страница ↔ нативное приложение", в Safari его нет
+  // window.webkit.messageHandlers — мост «страница ↔ нативное приложение», в Safari его нет
   var wkHandlers = !!(window.webkit && window.webkit.messageHandlers);
-
   var iosInApp = isIOS && !iosOtherBrowser && (noStandalone || wkHandlers || telegramObj);
-  var isInApp = inAppUA || androidWebView || telegramObj || iosInApp;
 
-  var okIOS      = isIOS && !iosOtherBrowser && !isInApp;
-  var okAndroid  = isAndroid && /Chrome\/\d/.test(ua) && !androidOtherBrowser && !isInApp;
-  var isDesktop  = !isIOS && !isAndroid;
+  var isInApp = iosInApp || androidInApp || (isDesktop && (inAppUA || telegramObj));
+
+  var okIOS     = isIOS && !iosOtherBrowser && !isInApp;
+  var okAndroid = isAndroid && /Chrome\/\d/.test(ua) && !androidOtherBrowser && !isInApp;
   var ok = okIOS || okAndroid || (isDesktop && !isInApp);
 
-  var here    = location.host + location.pathname + location.search;
-  var iosVer  = (ua.match(/OS (\d+)[._]\d+/) || [])[1];
-  var tooOld  = isIOS && iosVer && +iosVer < 17;
-  var target  = isAndroid ? 'Chrome' : 'Safari';
+  var here   = location.host + location.pathname + location.search;
+  var iosVer = (ua.match(/OS (\d+)[._]\d+/) || [])[1];
+  var tooOld = isIOS && iosVer && +iosVer < 17;
+  var target = isAndroid ? 'Chrome' : 'Safari';
 
   // ---------- диагностика ----------
   function flag(v) { return v ? '<span class="yes">да</span>' : '<span class="no">нет</span>'; }
   var debug =
     '<details><summary>Диагностика</summary><table>' +
     '<tr><td>платформа</td><td>' + (isIOS ? 'iOS ' + (iosVer || '?') : isAndroid ? 'Android' : 'desktop') + '</td></tr>' +
+    '<tr><td>вердикт</td><td>' + (ok ? 'OK' : isInApp ? 'in-app браузер' : 'не тот браузер') + '</td></tr>' +
     '<tr><td>сторонний браузер (UA)</td><td>' + flag(iosOtherBrowser || androidOtherBrowser) + '</td></tr>' +
     '<tr><td>in-app токен в UA</td><td>' + flag(inAppUA) + '</td></tr>' +
-    '<tr><td>Android WebView (;wv)</td><td>' + flag(androidWebView) + '</td></tr>' +
     '<tr><td>Telegram-объект</td><td>' + flag(telegramObj) + '</td></tr>' +
-    '<tr><td>navigator.standalone</td><td>' + String(navigator.standalone) + '</td></tr>' +
-    '<tr><td>webkit.messageHandlers</td><td>' + flag(wkHandlers) +
-      (wkHandlers ? ' <span class="no">' + Object.keys(window.webkit.messageHandlers).slice(0, 6).join(', ') + '</span>' : '') + '</td></tr>' +
-    '<tr><td>вердикт</td><td>' + (ok ? 'OK' : isInApp ? 'in-app браузер' : 'не тот браузер') + '</td></tr>' +
+    (isAndroid ?
+      '<tr><td>токен ;wv</td><td>' + flag(wvToken) + '</td></tr>' +
+      '<tr><td>бренды (Client Hints)</td><td>' + (brandList || '<span class="no">недоступны</span>') + '</td></tr>' +
+      '<tr><td>бренд WebView</td><td>' + flag(brandWebView) + '</td></tr>' +
+      '<tr><td>бренд Google Chrome</td><td>' + (brandRealChrome ? 'да' : '<span class="yes">нет</span>') + '</td></tr>' +
+      '<tr><td>Notification API</td><td>' + (noNotification ? '<span class="yes">отсутствует</span>' : 'есть') + '</td></tr>'
+      : '') +
+    (isIOS ?
+      '<tr><td>navigator.standalone</td><td>' + String(navigator.standalone) + '</td></tr>' +
+      '<tr><td>webkit.messageHandlers</td><td>' + flag(wkHandlers) +
+        (wkHandlers ? ' <span class="no">' + Object.keys(window.webkit.messageHandlers).slice(0, 6).join(', ') + '</span>' : '') + '</td></tr>'
+      : '') +
     '<tr><td>UA</td><td>' + ua + '</td></tr>' +
     '</table></details>';
 
@@ -98,7 +121,7 @@
     document.body.innerHTML =
       '<div class="badge">✅</div>' +
       '<h2>Вы в корректном браузере</h2>' +
-      '<p>' + (isIOS ? 'Настоящий Safari на iOS' : isAndroid ? 'Chrome на Android' : 'Десктоп — ограничений нет') + '</p>' +
+      '<p>' + (isIOS ? 'Настоящий Safari на iOS' : isAndroid ? 'Настоящий Chrome на Android' : 'Десктоп — ограничений нет') + '</p>' +
       debug;
     return;
   }
@@ -109,28 +132,21 @@
       encodeURIComponent('https://play.google.com/store/apps/details?id=com.android.chrome') + ';end'
     : 'x-safari-https://' + here;
 
-  var title = isInApp
-    ? 'Откройте страницу в браузере'
-    : 'Этот браузер не поддерживается';
-
-  var text = isInApp
-    ? 'Сейчас страница открыта во встроенном браузере приложения. Для корректной работы нужен ' + target + '.'
-    : 'Сайт корректно работает только в ' + target + '.';
-
-  var hint = isInApp
-    ? '<p class="hint">Если кнопка не сработала — нажмите «•••» в углу приложения и выберите ' +
-      '«Открыть в ' + target + '» / «Open in ' + target + '».</p>'
-    : '';
-
   document.body.className = 'bad';
   document.body.innerHTML =
     '<div class="badge">⚠️</div>' +
-    '<h2>' + title + '</h2>' +
-    '<p>' + text + '</p>' +
+    '<h2>' + (isInApp ? 'Откройте страницу в браузере' : 'Этот браузер не поддерживается') + '</h2>' +
+    '<p>' + (isInApp
+      ? 'Сейчас страница открыта во встроенном браузере приложения. Для корректной работы нужен ' + target + '.'
+      : 'Сайт корректно работает только в ' + target + '.') + '</p>' +
     (tooOld
       ? '<p>На вашей версии iOS автопереход недоступен — скопируйте ссылку и откройте её в Safari вручную.</p>'
       : '<a class="btn" href="' + openUrl + '">Открыть в ' + target + '</a>') +
-    hint + copyBtn + debug;
+    (isInApp
+      ? '<p class="hint">Если кнопка не сработала — нажмите «•••» в углу приложения и выберите ' +
+        '«Открыть в ' + target + '» / «Open in browser».</p>'
+      : '') +
+    copyBtn + debug;
 })();
 </script>
 </body>
