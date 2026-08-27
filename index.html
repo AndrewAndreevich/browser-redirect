@@ -194,6 +194,107 @@
     copyBtn + debug;
 })();
 
+// ---- проверка возможностей: что среда реально умеет ----
+// Надёжнее детекта браузера: не важно, что написано в UA, важно, работает ли AR/камера/гироскоп.
+(function () {
+  var box = document.createElement('details');
+  box.open = true;
+  box.innerHTML = '<summary>Возможности среды</summary><table id="caps"></table>' +
+    '<button class="copy" id="capsCopy">Скопировать возможности</button>';
+  document.body.appendChild(box);
+  var table = box.querySelector('#caps');
+
+  function row(name, value) {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td>' + name + '</td><td class="v">' + fmt(value) + '</td>';
+    table.appendChild(tr);
+    return tr.querySelector('.v');
+  }
+  function fmt(v) {
+    if (v === true)  return '<span style="color:#15803d;font-weight:600">✅ есть</span>';
+    if (v === false) return '<span class="yes">❌ нет</span>';
+    return v;
+  }
+  function safe(fn) { try { return !!fn(); } catch (e) { return false; } }
+
+  var checks = [
+    ['WebGL2',              function () { return document.createElement('canvas').getContext('webgl2'); }],
+    ['WebAssembly',         function () { return typeof WebAssembly === 'object'; }],
+    ['SharedArrayBuffer',   function () { return typeof SharedArrayBuffer === 'function'; }],
+    ['crossOriginIsolated', function () { return window.crossOriginIsolated; }],
+    ['WebXR (navigator.xr)', function () { return 'xr' in navigator; }],
+    ['AR Quick Look (rel=ar)', function () {
+      var a = document.createElement('a');
+      return a.relList && a.relList.supports && a.relList.supports('ar');
+    }],
+    ['getUserMedia (камера)', function () { return navigator.mediaDevices && navigator.mediaDevices.getUserMedia; }],
+    ['DeviceOrientation',   function () { return 'DeviceOrientationEvent' in window; }],
+    ['запрос доступа к гироскопу (iOS)', function () {
+      return typeof (window.DeviceOrientationEvent || {}).requestPermission === 'function';
+    }],
+    ['Fullscreen API',      function () {
+      var d = document.documentElement;
+      return d.requestFullscreen || d.webkitRequestFullscreen;
+    }],
+    ['Service Worker',      function () { return 'serviceWorker' in navigator; }],
+    ['Notification',        function () { return 'Notification' in window; }],
+    ['clipboard.writeText', function () { return navigator.clipboard && navigator.clipboard.writeText; }]
+  ];
+
+  var results = {};
+  checks.forEach(function (c) {
+    results[c[0]] = safe(c[1]);
+    row(c[0], results[c[0]]);
+  });
+
+  // асинхронные проверки
+  var arCell = row('WebXR immersive-ar', 'проверяю…');
+  var vrCell = row('WebXR immersive-vr', 'проверяю…');
+  var camCell = row('камер в системе', 'проверяю…');
+  var verdictCell = row('<b>AR доступен</b>', 'проверяю…');
+
+  function xr(mode, cell, done) {
+    if (!navigator.xr || !navigator.xr.isSessionSupported) {
+      cell.innerHTML = fmt(false); results[mode] = false; return done();
+    }
+    navigator.xr.isSessionSupported(mode).then(function (v) {
+      cell.innerHTML = fmt(!!v); results[mode] = !!v; done();
+    }, function (e) {
+      cell.innerHTML = '<span class="yes">❌ ошибка: ' + e.name + '</span>'; results[mode] = false; done();
+    });
+  }
+
+  var pending = 2;
+  function finish() {
+    if (--pending) return;
+    var isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    // на Android AR идёт через WebXR, на iOS — через AR Quick Look (USDZ)
+    var arOk = isIOS ? results['AR Quick Look (rel=ar)'] : results['immersive-ar'];
+    verdictCell.innerHTML = arOk
+      ? '<span style="color:#15803d;font-weight:600">✅ да</span>'
+      : '<span class="yes">❌ нет — этот браузер AR не потянет</span>';
+  }
+  xr('immersive-ar', arCell, finish);
+  xr('immersive-vr', vrCell, finish);
+
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    navigator.mediaDevices.enumerateDevices().then(function (list) {
+      camCell.textContent = list.filter(function (d) { return d.kind === 'videoinput'; }).length;
+    }, function () { camCell.textContent = 'ошибка'; });
+  } else {
+    camCell.innerHTML = fmt(false);
+  }
+
+  document.getElementById('capsCopy').onclick = function () {
+    var text = [].map.call(table.rows, function (r) {
+      return r.cells[0].textContent + ': ' + r.cells[1].textContent;
+    }).join('\n');
+    navigator.clipboard.writeText(text).then(function () {
+      document.getElementById('capsCopy').textContent = 'Скопировано ✓';
+    });
+  };
+})();
+
 // ---- проверка beforeinstallprompt ----
 // Приложение Chrome предлагает установить сайт на домашний экран, Custom Tabs — нет.
 // Событие приходит асинхронно, поэтому строку в таблице обновляем отдельно.
