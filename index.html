@@ -63,9 +63,19 @@
   var brandRealChrome = /Google Chrome/i.test(brandList);
   // в) в WebView нет Notification API — запасной признак, если Client Hints недоступны
   var noNotification = typeof window.Notification === 'undefined';
+  // г) Chrome Custom Tabs (так делает Telegram): это настоящий Chrome в окне приложения,
+  //    все API хромовские, но реферрер выдаёт приложение-хозяина
+  var ref = document.referrer || '';
+  var appRef = /^android-app:\/\//.test(ref) ? ref : '';
+  try {
+    if (appRef) sessionStorage.setItem('appRef', appRef);
+    else appRef = sessionStorage.getItem('appRef') || '';   // переживает переходы внутри сайта
+  } catch (e) {}
+  var refPackage = appRef.replace(/^android-app:\/\//, '').replace(/\/$/, '');
+  var customTab = !!appRef;
 
   var androidInApp = isAndroid && !androidOtherBrowser && (
-        wvToken || brandWebView || telegramObj || inAppUA ||
+        wvToken || brandWebView || telegramObj || inAppUA || customTab ||
         (brands.length ? !brandRealChrome : noNotification)
       );
 
@@ -88,28 +98,48 @@
   var target = isAndroid ? 'Chrome' : 'Safari';
 
   // ---------- диагностика ----------
-  function flag(v) { return v ? '<span class="yes">да</span>' : '<span class="no">нет</span>'; }
+  var rows = [
+    ['платформа',      isIOS ? 'iOS ' + (iosVer || '?') : isAndroid ? 'Android' : 'desktop'],
+    ['вердикт',        ok ? 'OK' : isInApp ? 'in-app браузер' : 'не тот браузер'],
+    ['сторонний браузер (UA)', iosOtherBrowser || androidOtherBrowser],
+    ['in-app токен в UA',      inAppUA],
+    ['Telegram-объект',        telegramObj]
+  ];
+  if (isAndroid) rows.push(
+    ['токен ;wv',            wvToken],
+    ['бренды (Client Hints)', brandList || '(недоступны)'],
+    ['бренд WebView',        brandWebView],
+    ['бренд Google Chrome',  brandRealChrome],
+    ['Notification API',     noNotification ? '(отсутствует)' : 'есть'],
+    ['реферрер приложения',  refPackage || '(нет)'],
+    ['document.referrer',    ref || '(пусто)']
+  );
+  if (isIOS) rows.push(
+    ['navigator.standalone', String(navigator.standalone)],
+    ['webkit.messageHandlers', wkHandlers
+      ? Object.keys(window.webkit.messageHandlers).slice(0, 8).join(', ') || 'есть' : false]
+  );
+  rows.push(
+    ['окно / экран', window.innerWidth + '×' + window.innerHeight + ' / ' + screen.width + '×' + screen.height],
+    ['UA', ua]
+  );
+
+  var plain = rows.map(function (r) {
+    return r[0] + ': ' + (r[1] === true ? 'да' : r[1] === false ? 'нет' : r[1]);
+  }).join('\n');
+
   var debug =
-    '<details><summary>Диагностика</summary><table>' +
-    '<tr><td>платформа</td><td>' + (isIOS ? 'iOS ' + (iosVer || '?') : isAndroid ? 'Android' : 'desktop') + '</td></tr>' +
-    '<tr><td>вердикт</td><td>' + (ok ? 'OK' : isInApp ? 'in-app браузер' : 'не тот браузер') + '</td></tr>' +
-    '<tr><td>сторонний браузер (UA)</td><td>' + flag(iosOtherBrowser || androidOtherBrowser) + '</td></tr>' +
-    '<tr><td>in-app токен в UA</td><td>' + flag(inAppUA) + '</td></tr>' +
-    '<tr><td>Telegram-объект</td><td>' + flag(telegramObj) + '</td></tr>' +
-    (isAndroid ?
-      '<tr><td>токен ;wv</td><td>' + flag(wvToken) + '</td></tr>' +
-      '<tr><td>бренды (Client Hints)</td><td>' + (brandList || '<span class="no">недоступны</span>') + '</td></tr>' +
-      '<tr><td>бренд WebView</td><td>' + flag(brandWebView) + '</td></tr>' +
-      '<tr><td>бренд Google Chrome</td><td>' + (brandRealChrome ? 'да' : '<span class="yes">нет</span>') + '</td></tr>' +
-      '<tr><td>Notification API</td><td>' + (noNotification ? '<span class="yes">отсутствует</span>' : 'есть') + '</td></tr>'
-      : '') +
-    (isIOS ?
-      '<tr><td>navigator.standalone</td><td>' + String(navigator.standalone) + '</td></tr>' +
-      '<tr><td>webkit.messageHandlers</td><td>' + flag(wkHandlers) +
-        (wkHandlers ? ' <span class="no">' + Object.keys(window.webkit.messageHandlers).slice(0, 6).join(', ') + '</span>' : '') + '</td></tr>'
-      : '') +
-    '<tr><td>UA</td><td>' + ua + '</td></tr>' +
-    '</table></details>';
+    '<details open><summary>Диагностика</summary><table>' +
+    rows.map(function (r) {
+      var v = r[1] === true  ? '<span class="yes">да</span>'
+            : r[1] === false ? '<span class="no">нет</span>'
+            : r[1];
+      return '<tr><td>' + r[0] + '</td><td>' + v + '</td></tr>';
+    }).join('') +
+    '</table>' +
+    '<button class="copy" onclick="navigator.clipboard.writeText(' + JSON.stringify(plain) + ')' +
+    '.then(function(){event.target.textContent=\'Диагностика скопирована ✓\'})">Скопировать диагностику</button>' +
+    '</details>';
 
   var copyBtn =
     '<button class="copy" onclick="navigator.clipboard.writeText(location.href)' +
