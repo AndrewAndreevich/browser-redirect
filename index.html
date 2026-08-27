@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Browser Check</title>
+<style>
+  body {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; margin: 0; font-family: system-ui, sans-serif;
+    text-align: center; padding: 24px; gap: 16px; box-sizing: border-box;
+  }
+  body.ok  { background: #e8f9ee; color: #14532d; }
+  body.bad { background: #fdeaea; color: #7f1d1d; }
+  h2 { margin: 0; font-size: 26px; }
+  p  { margin: 0; font-size: 17px; line-height: 1.5; }
+  .btn {
+    background: #2563eb; color: #fff; padding: 16px 32px; border-radius: 12px;
+    text-decoration: none; font-weight: 600; font-size: 17px; border: none;
+  }
+  .copy { background: none; border: none; color: #2563eb; font-size: 15px; padding: 8px; }
+  .badge { font-size: 64px; }
+  .ua { font-size: 12px; opacity: .5; word-break: break-all; max-width: 480px; margin-top: 24px; }
+</style>
+<body>
+<script>
+(function () {
+  var ua = navigator.userAgent;
+  var isIOS = /iPhone|iPad|iPod/.test(ua) ||
+              (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var isAndroid = /Android/.test(ua);
+
+  var isIOSSafari = isIOS && /Safari/.test(ua) &&
+      !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|YaBrowser|DuckDuckGo|Brave/.test(ua);
+
+  var isAndroidChrome = isAndroid && /Chrome\/\d/.test(ua) &&
+      !/Firefox|EdgA|OPR|SamsungBrowser|YaBrowser|Brave|UCBrowser|MiuiBrowser/.test(ua);
+
+  var ok = (isIOS && isIOSSafari) || (isAndroid && isAndroidChrome) || (!isIOS && !isAndroid);
+
+  var body = document.body;
+  var here = location.host + location.pathname + location.search;
+  var proto = location.protocol.replace(':', ''); // http | https
+
+  if (ok) {
+    body.className = 'ok';
+    body.innerHTML =
+      '<div class="badge">✅</div>' +
+      '<h2>Вы в корректном браузере</h2>' +
+      '<p>' + (isIOS ? 'Safari на iOS' : isAndroid ? 'Chrome на Android' : 'Десктоп — ограничений нет') + '</p>' +
+      '<div class="ua">' + ua + '</div>';
+    return;
+  }
+
+  body.className = 'bad';
+
+  if (isAndroid) {
+    var intentUrl = 'intent://' + here +
+      '#Intent;scheme=' + proto +
+      ';package=com.android.chrome' +
+      ';S.browser_fallback_url=' + encodeURIComponent(
+        'https://play.google.com/store/apps/details?id=com.android.chrome') +
+      ';end';
+    body.innerHTML =
+      '<div class="badge">⚠️</div>' +
+      '<h2>Этот браузер не поддерживается</h2>' +
+      '<p>Сайт корректно работает только в Chrome.</p>' +
+      '<a class="btn" href="' + intentUrl + '">Открыть в Chrome</a>' +
+      '<button class="copy" onclick="navigator.clipboard.writeText(location.href).then(function(){event.target.textContent=\'Скопировано ✓\'})">Скопировать ссылку</button>' +
+      '<div class="ua">' + ua + '</div>';
+    return;
+  }
+
+  // iOS: x-safari-https:// открывает ссылку в Safari (iOS 17+)
+  var m = ua.match(/OS (\d+)[._](\d+)/);
+  var tooOld = m && +m[1] < 17;
+
+  body.innerHTML =
+    '<div class="badge">⚠️</div>' +
+    '<h2>Этот браузер не поддерживается</h2>' +
+    '<p>Сайт корректно работает только в Safari.</p>' +
+    (tooOld
+      ? '<p>На вашей iOS автопереход недоступен — скопируйте ссылку и откройте её в Safari.</p>'
+      : '<a class="btn" href="x-safari-https://' + here + '">Открыть в Safari</a>') +
+    '<button class="copy" onclick="navigator.clipboard.writeText(location.href).then(function(){event.target.textContent=\'Скопировано ✓\'})">Скопировать ссылку</button>' +
+    '<div class="ua">' + ua + '</div>';
+})();
+</script>
+</body>
