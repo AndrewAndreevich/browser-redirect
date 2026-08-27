@@ -3,22 +3,33 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Browser Check</title>
 <style>
+  * { box-sizing: border-box; }
   body {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    min-height: 100vh; margin: 0; font-family: system-ui, sans-serif;
-    text-align: center; padding: 24px; gap: 16px; box-sizing: border-box;
+    min-height: 100vh; margin: 0; font-family: system-ui, -apple-system, sans-serif;
+    text-align: center; padding: 24px; gap: 14px;
   }
   body.ok  { background: #e8f9ee; color: #14532d; }
   body.bad { background: #fdeaea; color: #7f1d1d; }
-  h2 { margin: 0; font-size: 26px; }
-  p  { margin: 0; font-size: 17px; line-height: 1.5; }
+  h2 { margin: 0; font-size: 25px; }
+  p  { margin: 0; font-size: 17px; line-height: 1.45; max-width: 460px; }
+  .badge { font-size: 60px; line-height: 1; }
   .btn {
-    background: #2563eb; color: #fff; padding: 16px 32px; border-radius: 12px;
-    text-decoration: none; font-weight: 600; font-size: 17px; border: none;
+    background: #2563eb; color: #fff; padding: 16px 30px; border-radius: 12px;
+    text-decoration: none; font-weight: 600; font-size: 17px; border: none; display: inline-block;
   }
-  .copy { background: none; border: none; color: #2563eb; font-size: 15px; padding: 8px; }
-  .badge { font-size: 64px; }
-  .ua { font-size: 12px; opacity: .5; word-break: break-all; max-width: 480px; margin-top: 24px; }
+  .copy { background: none; border: none; color: #2563eb; font-size: 15px; padding: 6px; }
+  .hint {
+    font-size: 14px; opacity: .75; background: rgba(0,0,0,.05);
+    padding: 12px 16px; border-radius: 10px; max-width: 460px;
+  }
+  details { margin-top: 22px; font-size: 12px; opacity: .6; max-width: 100%; width: 100%; }
+  summary { cursor: pointer; }
+  table { font-size: 11px; text-align: left; margin: 8px auto 0; border-collapse: collapse; }
+  td { padding: 2px 8px; vertical-align: top; word-break: break-all; }
+  td:first-child { opacity: .7; white-space: nowrap; }
+  .yes { color: #b91c1c; font-weight: 600; }
+  .no  { opacity: .45; }
 </style>
 <body>
 <script>
@@ -28,60 +39,98 @@
               (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   var isAndroid = /Android/.test(ua);
 
-  var isIOSSafari = isIOS && /Safari/.test(ua) &&
-      !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|YaBrowser|DuckDuckGo|Brave/.test(ua);
+  // --- 1. Сторонние браузеры (у них честный токен в UA) ---
+  var iosOtherBrowser     = /CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|YaBrowser|DuckDuckGo|Brave/.test(ua);
+  var androidOtherBrowser = /Firefox|EdgA|OPR|SamsungBrowser|YaBrowser|Brave|UCBrowser|MiuiBrowser/.test(ua);
 
-  var isAndroidChrome = isAndroid && /Chrome\/\d/.test(ua) &&
-      !/Firefox|EdgA|OPR|SamsungBrowser|YaBrowser|Brave|UCBrowser|MiuiBrowser/.test(ua);
+  // --- 2. In-app браузеры, которые представляются в UA ---
+  var inAppUA = /(FBAN|FBAV|FB_IAB|Instagram|Line\/|MicroMessenger|Twitter|TikTok|Snapchat|VKAndroidApp|VKClient|OKApp|WhatsApp|Discord|Slack|LinkedInApp|Pinterest|GSA\/)/i.test(ua);
 
-  var ok = (isIOS && isIOSSafari) || (isAndroid && isAndroidChrome) || (!isIOS && !isAndroid);
+  // --- 3. Android WebView: токен "; wv" ---
+  var androidWebView = isAndroid && /;\s*wv[;)]/.test(ua);
 
-  var body = document.body;
-  var here = location.host + location.pathname + location.search;
-  var proto = location.protocol.replace(':', ''); // http | https
+  // --- 4. Telegram: инжектит свои объекты ---
+  var telegramObj = !!(window.TelegramWebviewProxy || window.TelegramWebview ||
+                       (window.Telegram && (window.Telegram.WebApp || window.Telegram.WebView)));
 
+  // --- 5. iOS WKWebView: UA как у Safari, но API другие ---
+  // navigator.standalone есть только в настоящем Safari, в WKWebView он undefined
+  var noStandalone = isIOS && typeof navigator.standalone === 'undefined';
+  // window.webkit.messageHandlers — мост "страница ↔ нативное приложение", в Safari его нет
+  var wkHandlers = !!(window.webkit && window.webkit.messageHandlers);
+
+  var iosInApp = isIOS && !iosOtherBrowser && (noStandalone || wkHandlers || telegramObj);
+  var isInApp = inAppUA || androidWebView || telegramObj || iosInApp;
+
+  var okIOS      = isIOS && !iosOtherBrowser && !isInApp;
+  var okAndroid  = isAndroid && /Chrome\/\d/.test(ua) && !androidOtherBrowser && !isInApp;
+  var isDesktop  = !isIOS && !isAndroid;
+  var ok = okIOS || okAndroid || (isDesktop && !isInApp);
+
+  var here    = location.host + location.pathname + location.search;
+  var iosVer  = (ua.match(/OS (\d+)[._]\d+/) || [])[1];
+  var tooOld  = isIOS && iosVer && +iosVer < 17;
+  var target  = isAndroid ? 'Chrome' : 'Safari';
+
+  // ---------- диагностика ----------
+  function flag(v) { return v ? '<span class="yes">да</span>' : '<span class="no">нет</span>'; }
+  var debug =
+    '<details><summary>Диагностика</summary><table>' +
+    '<tr><td>платформа</td><td>' + (isIOS ? 'iOS ' + (iosVer || '?') : isAndroid ? 'Android' : 'desktop') + '</td></tr>' +
+    '<tr><td>сторонний браузер (UA)</td><td>' + flag(iosOtherBrowser || androidOtherBrowser) + '</td></tr>' +
+    '<tr><td>in-app токен в UA</td><td>' + flag(inAppUA) + '</td></tr>' +
+    '<tr><td>Android WebView (;wv)</td><td>' + flag(androidWebView) + '</td></tr>' +
+    '<tr><td>Telegram-объект</td><td>' + flag(telegramObj) + '</td></tr>' +
+    '<tr><td>navigator.standalone</td><td>' + String(navigator.standalone) + '</td></tr>' +
+    '<tr><td>webkit.messageHandlers</td><td>' + flag(wkHandlers) +
+      (wkHandlers ? ' <span class="no">' + Object.keys(window.webkit.messageHandlers).slice(0, 6).join(', ') + '</span>' : '') + '</td></tr>' +
+    '<tr><td>вердикт</td><td>' + (ok ? 'OK' : isInApp ? 'in-app браузер' : 'не тот браузер') + '</td></tr>' +
+    '<tr><td>UA</td><td>' + ua + '</td></tr>' +
+    '</table></details>';
+
+  var copyBtn =
+    '<button class="copy" onclick="navigator.clipboard.writeText(location.href)' +
+    '.then(function(){event.target.textContent=\'Скопировано ✓\'})">Скопировать ссылку</button>';
+
+  // ---------- рендер ----------
   if (ok) {
-    body.className = 'ok';
-    body.innerHTML =
+    document.body.className = 'ok';
+    document.body.innerHTML =
       '<div class="badge">✅</div>' +
       '<h2>Вы в корректном браузере</h2>' +
-      '<p>' + (isIOS ? 'Safari на iOS' : isAndroid ? 'Chrome на Android' : 'Десктоп — ограничений нет') + '</p>' +
-      '<div class="ua">' + ua + '</div>';
+      '<p>' + (isIOS ? 'Настоящий Safari на iOS' : isAndroid ? 'Chrome на Android' : 'Десктоп — ограничений нет') + '</p>' +
+      debug;
     return;
   }
 
-  body.className = 'bad';
+  var openUrl = isAndroid
+    ? 'intent://' + here + '#Intent;scheme=' + location.protocol.replace(':', '') +
+      ';package=com.android.chrome;S.browser_fallback_url=' +
+      encodeURIComponent('https://play.google.com/store/apps/details?id=com.android.chrome') + ';end'
+    : 'x-safari-https://' + here;
 
-  if (isAndroid) {
-    var intentUrl = 'intent://' + here +
-      '#Intent;scheme=' + proto +
-      ';package=com.android.chrome' +
-      ';S.browser_fallback_url=' + encodeURIComponent(
-        'https://play.google.com/store/apps/details?id=com.android.chrome') +
-      ';end';
-    body.innerHTML =
-      '<div class="badge">⚠️</div>' +
-      '<h2>Этот браузер не поддерживается</h2>' +
-      '<p>Сайт корректно работает только в Chrome.</p>' +
-      '<a class="btn" href="' + intentUrl + '">Открыть в Chrome</a>' +
-      '<button class="copy" onclick="navigator.clipboard.writeText(location.href).then(function(){event.target.textContent=\'Скопировано ✓\'})">Скопировать ссылку</button>' +
-      '<div class="ua">' + ua + '</div>';
-    return;
-  }
+  var title = isInApp
+    ? 'Откройте страницу в браузере'
+    : 'Этот браузер не поддерживается';
 
-  // iOS: x-safari-https:// открывает ссылку в Safari (iOS 17+)
-  var m = ua.match(/OS (\d+)[._](\d+)/);
-  var tooOld = m && +m[1] < 17;
+  var text = isInApp
+    ? 'Сейчас страница открыта во встроенном браузере приложения. Для корректной работы нужен ' + target + '.'
+    : 'Сайт корректно работает только в ' + target + '.';
 
-  body.innerHTML =
+  var hint = isInApp
+    ? '<p class="hint">Если кнопка не сработала — нажмите «•••» в углу приложения и выберите ' +
+      '«Открыть в ' + target + '» / «Open in ' + target + '».</p>'
+    : '';
+
+  document.body.className = 'bad';
+  document.body.innerHTML =
     '<div class="badge">⚠️</div>' +
-    '<h2>Этот браузер не поддерживается</h2>' +
-    '<p>Сайт корректно работает только в Safari.</p>' +
+    '<h2>' + title + '</h2>' +
+    '<p>' + text + '</p>' +
     (tooOld
-      ? '<p>На вашей iOS автопереход недоступен — скопируйте ссылку и откройте её в Safari.</p>'
-      : '<a class="btn" href="x-safari-https://' + here + '">Открыть в Safari</a>') +
-    '<button class="copy" onclick="navigator.clipboard.writeText(location.href).then(function(){event.target.textContent=\'Скопировано ✓\'})">Скопировать ссылку</button>' +
-    '<div class="ua">' + ua + '</div>';
+      ? '<p>На вашей версии iOS автопереход недоступен — скопируйте ссылку и откройте её в Safari вручную.</p>'
+      : '<a class="btn" href="' + openUrl + '">Открыть в ' + target + '</a>') +
+    hint + copyBtn + debug;
 })();
 </script>
 </body>
